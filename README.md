@@ -33,7 +33,8 @@ sudo ACCESS_LOG=/var/lib/marzban/access.log \
 Мгновенный бан по событию: maxretry=1 (или по 2 событиям: maxretry=2).
 
 Проверка
-bash
+
+```bash
 Копировать код
 systemctl show -p Environment marzban-ipl
 sudo fail2ban-client status marzban-ipl
