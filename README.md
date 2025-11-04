@@ -12,9 +12,9 @@ Fail2ban ловит эти строки и банит IP на короткое �
 
 Установка
 ```
-curl -fsSL https://raw.githubusercontent.com/hebu001/marzbanf2b/main/install-marzban-ipl.sh -o install-marzban-ipl.sh
-less install-marzban-ipl.sh
+wget -O install-marzban-ipl.sh https://raw.githubusercontent.com/hebu001/marzbanf2b/main/install-marzban-ipl.sh
 sudo bash install-marzban-ipl.sh
+
 ```
 ##sudo bash install-marzban-ipl.sh
 ##(для non-interactive режима: задайте переменные окружения и NONINTERACTIVE=1)
