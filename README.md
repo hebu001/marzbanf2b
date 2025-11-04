@@ -45,7 +45,7 @@ tail -f /var/log/marzban-ipl.log
 ```
 DELETE
 ```
-bash curl -fsSL https://raw.githubusercontent.com/hebu001/marzbanf2b/main/uninstall-marzban-ipl.sh -o /tmp/uninstall-marzban-ipl.sh
+curl -fsSL https://raw.githubusercontent.com/hebu001/marzbanf2b/main/uninstall-marzban-ipl.sh -o /tmp/uninstall-marzban-ipl.sh
 sudo bash /tmp/uninstall-marzban-ipl.sh --purge-logs
 
 
