@@ -11,9 +11,13 @@ bash
 Fail2ban ловит эти строки и банит IP на короткое время (iptables/nftables).
 
 Установка
-```bash
+`
+curl -fsSL https://raw.githubusercontent.com/hebu001/marzbanf2b/main/install-marzban-ipl.sh -o install-marzban-ipl.sh
+less install-marzban-ipl.sh
 sudo bash install-marzban-ipl.sh
-(для non-interactive режима: задайте переменные окружения и NONINTERACTIVE=1)
+```
+##sudo bash install-marzban-ipl.sh
+##(для non-interactive режима: задайте переменные окружения и NONINTERACTIVE=1)
 
 Примеры:
 
@@ -34,25 +38,19 @@ sudo ACCESS_LOG=/var/lib/marzban/access.log \
 
 Проверка
 
-```bash
+```
 Копировать код
 systemctl show -p Environment marzban-ipl
 sudo fail2ban-client status marzban-ipl
 tail -f /var/log/marzban-ipl.log
-Удаление
-bash
-Копировать код
-sudo systemctl disable --now marzban-ipl
-sudo rm -f /etc/systemd/system/marzban-ipl.service /usr/local/bin/marzban-ipl-feeder.py
-sudo rm -f /etc/fail2ban/filter.d/marzban-ipl.conf /etc/fail2ban/jail.d/marzban-ipl.conf /etc/fail2ban/action.d/marzban-ipl.conf
-sudo systemctl daemon-reload
-sudo systemctl restart fail2ban
-perl
-Копировать код
+```
 
-если хочешь, добавлю в репо ещё `uninstall.sh` и GitHub Actions (линт/шельчек), но для старта достаточно одного файла выше.
-::contentReference[oaicite:0]{index=0}
+DELETE
+```
+curl -fsSL https://raw.githubusercontent.com/hebu001/marzbanf2b/main/uninstall-marzban-ipl.sh -o /tmp/uninstall-marzban-ipl.sh
+sudo bash /tmp/uninstall-marzban-ipl.sh --purge-logs
 
+```
 
 
 
