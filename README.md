@@ -40,13 +40,15 @@ sudo ACCESS_LOG=/var/lib/marzban/access.log \
 
 ```
 Копировать код
+```
 systemctl show -p Environment marzban-ipl
 sudo fail2ban-client status marzban-ipl
 tail -f /var/log/marzban-ipl.log
 ```
 
 DELETE
-```
+
+```bash
 curl -fsSL https://raw.githubusercontent.com/hebu001/marzbanf2b/main/uninstall-marzban-ipl.sh -o /tmp/uninstall-marzban-ipl.sh
 sudo bash /tmp/uninstall-marzban-ipl.sh --purge-logs
 
