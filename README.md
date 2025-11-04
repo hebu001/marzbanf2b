@@ -7,7 +7,7 @@ marzban fail2ban iplimit
 YYYY/MM/DD HH:MM:SS [LIMIT_IP] Email = USER || SRC = IP
 
 
-Копировать код
+
 Fail2ban ловит эти строки и банит IP на короткое время (iptables/nftables).
 
 Установка
@@ -22,7 +22,6 @@ sudo bash install-marzban-ipl.sh
 Примеры:
 
 ```bash
-Копировать код
 sudo ACCESS_LOG=/var/lib/marzban/access.log \
      OUT_LOG=/var/log/marzban-ipl.log \
      IP_LIMIT=1 WINDOW_SEC=90 \
@@ -37,20 +36,19 @@ sudo ACCESS_LOG=/var/lib/marzban/access.log \
 
 Мгновенный бан по событию: maxretry=1 (или по 2 событиям: maxretry=2).
 ```
+```
 Проверка
 ```
 systemctl show -p Environment marzban-ipl
 sudo fail2ban-client status marzban-ipl
 tail -f /var/log/marzban-ipl.log
 ```
-
 DELETE
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/hebu001/marzbanf2b/main/uninstall-marzban-ipl.sh -o /tmp/uninstall-marzban-ipl.sh
+```
+bash curl -fsSL https://raw.githubusercontent.com/hebu001/marzbanf2b/main/uninstall-marzban-ipl.sh -o /tmp/uninstall-marzban-ipl.sh
 sudo bash /tmp/uninstall-marzban-ipl.sh --purge-logs
 
-```
+
 
 
 
