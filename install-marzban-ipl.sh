@@ -1,128 +1,92 @@
 #!/usr/bin/env bash
-# install-marzban-ipl.sh
-# Marzban "one-device" limiter (3x-ui style) via Fail2ban
-# - feeder reads Xray access.log and emits [LIMIT_IP] lines
-# - Fail2ban bans the "second" IP for a short time
-#
-# Supports: Debian/Ubuntu (apt). For other distros, install python3+fail2ban manually.
-
 set -euo pipefail
 
-# ---------------------------
-# Helpers
-# ---------------------------
-bold() { printf "\033[1m%s\033[0m\n" "$*"; }
-info() { printf "  - %s\n" "$*"; }
-err()  { printf "\033[31m[ERROR]\033[0m %s\n" "$*" >&2; }
-ok()   { printf "\033[32m[OK]\033[0m %s\n" "$*\n"; }
+echo "=== Marzban IPL (3x-ui style) installer ==="
 
-require_root() {
-  if [[ $EUID -ne 0 ]]; then err "run as root"; exit 1; fi
-}
+# --- 0) sanity checks ---
+if [[ $EUID -ne 0 ]]; then
+  echo "Please run as root"; exit 1
+fi
 
+# --- 1) defaults & prompts ---
 detect_access_log() {
-  local cands=(/var/lib/marzban/access.log /var/log/xray/access.log)
-  for p in "${cands[@]}"; do [[ -f "$p" ]] && { echo "$p"; return; }; done
+  # находим вероятные логи xray/marzban
+  local candidates=(/var/lib/marzban/access.log /var/log/xray/access.log)
+  for p in "${candidates[@]}"; do
+    [[ -f "$p" ]] && { echo "$p"; return; }
+  done
+  # если не нашли — показываем дефолт (создастся после включения логов в xray)
   echo "/var/lib/marzban/access.log"
 }
 
-detect_fw() {
-  if command -v nft >/dev/null 2>&1; then echo nftables
-  elif command -v iptables >/dev/null 2>&1; then echo iptables
-  else echo iptables; fi
-}
+ACCESS_LOG_DEFAULT="$(detect_access_log)"
+OUT_LOG_DEFAULT="/var/log/marzban-ipl.log"
+IP_LIMIT_DEFAULT="1"
+WINDOW_SEC_DEFAULT="90"
+BANTIME_DEFAULT="1m"
+FINDTIME_DEFAULT="32"
+MAXRETRY_DEFAULT="1"
 
-install_deps() {
-  if command -v apt >/dev/null 2>&1; then
-    info "Installing python3 and fail2ban via apt..."
-    DEBIAN_FRONTEND=noninteractive apt update -y
-    DEBIAN_FRONTEND=noninteractive apt install -y python3 fail2ban
-  else
-    info "Non-apt system detected. Please ensure python3 and fail2ban are installed."
-  fi
-}
-
-# ---------------------------
-# Defaults (can be overridden via env)
-# ---------------------------
-ACCESS_LOG_DEFAULT="${ACCESS_LOG:-$(detect_access_log)}"
-OUT_LOG_DEFAULT="${OUT_LOG:-/var/log/marzban-ipl.log}"
-IP_LIMIT_DEFAULT="${IP_LIMIT:-1}"
-WINDOW_SEC_DEFAULT="${WINDOW_SEC:-90}"
-BANTIME_DEFAULT="${BANTIME:-1m}"
-FINDTIME_DEFAULT="${FINDTIME:-32}"
-MAXRETRY_DEFAULT="${MAXRETRY:-1}"
-FW_DEFAULT="${FW:-$(detect_fw)}"
-
-# NONINTERACTIVE=1 → no prompts, use defaults/envs
-NONINTERACTIVE="${NONINTERACTIVE:-0}"
-
-# ---------------------------
-# Gather config
-# ---------------------------
-require_root
-bold "Marzban IPL (one-device) installer"
-
-if [[ "$NONINTERACTIVE" == "1" ]]; then
-  ACCESS_LOG="${ACCESS_LOG_DEFAULT}"
-  OUT_LOG="${OUT_LOG_DEFAULT}"
-  IP_LIMIT="${IP_LIMIT_DEFAULT}"
-  WINDOW_SEC="${WINDOW_SEC_DEFAULT}"
-  BANTIME="${BANTIME_DEFAULT}"
-  FINDTIME="${FINDTIME_DEFAULT}"
-  MAXRETRY="${MAXRETRY_DEFAULT}"
-  FW="${FW_DEFAULT}"
+# автодетект фаервола
+if command -v nft >/dev/null 2>&1; then
+  FW_DEFAULT="nftables"
+elif command -v iptables >/dev/null 2>&1; then
+  FW_DEFAULT="iptables"
 else
-  read -rp "Path to ACCESS_LOG [${ACCESS_LOG_DEFAULT}]: " ACCESS_LOG || true
-  ACCESS_LOG="${ACCESS_LOG:-$ACCESS_LOG_DEFAULT}"
-
-  read -rp "Path to feeder OUT_LOG [${OUT_LOG_DEFAULT}]: " OUT_LOG || true
-  OUT_LOG="${OUT_LOG:-$OUT_LOG_DEFAULT}"
-
-  read -rp "IP_LIMIT (unique IPs per user in window) [${IP_LIMIT_DEFAULT}]: " IP_LIMIT || true
-  IP_LIMIT="${IP_LIMIT:-$IP_LIMIT_DEFAULT}"
-
-  read -rp "WINDOW_SEC (concurrency window, sec) [${WINDOW_SEC_DEFAULT}]: " WINDOW_SEC || true
-  WINDOW_SEC="${WINDOW_SEC:-$WINDOW_SEC_DEFAULT}"
-
-  read -rp "Fail2ban bantime (e.g. 1m, 120) [${BANTIME_DEFAULT}]: " BANTIME || true
-  BANTIME="${BANTIME:-$BANTIME_DEFAULT}"
-
-  read -rp "Fail2ban findtime (sec) [${FINDTIME_DEFAULT}]: " FINDTIME || true
-  FINDTIME="${FINDTIME:-$FINDTIME_DEFAULT}"
-
-  read -rp "Fail2ban maxretry [${MAXRETRY_DEFAULT}]: " MAXRETRY || true
-  MAXRETRY="${MAXRETRY:-$MAXRETRY_DEFAULT}"
-
-  read -rp "Firewall backend (iptables/nftables) [${FW_DEFAULT}]: " FW || true
-  FW="${FW:-$FW_DEFAULT}"
+  FW_DEFAULT="iptables"
 fi
 
+read -rp "Path to ACCESS_LOG [${ACCESS_LOG_DEFAULT}]: " ACCESS_LOG || true
+ACCESS_LOG="${ACCESS_LOG:-$ACCESS_LOG_DEFAULT}"
+
+read -rp "Path to feeder OUT_LOG (Fail2ban reads this) [${OUT_LOG_DEFAULT}]: " OUT_LOG || true
+OUT_LOG="${OUT_LOG:-$OUT_LOG_DEFAULT}"
+
+read -rp "IP_LIMIT (unique IPs per user within window) [${IP_LIMIT_DEFAULT}]: " IP_LIMIT || true
+IP_LIMIT="${IP_LIMIT:-$IP_LIMIT_DEFAULT}"
+
+read -rp "WINDOW_SEC (concurrency window, seconds) [${WINDOW_SEC_DEFAULT}]: " WINDOW_SEC || true
+WINDOW_SEC="${WINDOW_SEC:-$WINDOW_SEC_DEFAULT}"
+
+read -rp "Fail2ban bantime (e.g. 1m, 120, 5m) [${BANTIME_DEFAULT}]: " BANTIME || true
+BANTIME="${BANTIME:-$BANTIME_DEFAULT}"
+
+read -rp "Fail2ban findtime (seconds) [${FINDTIME_DEFAULT}]: " FINDTIME || true
+FINDTIME="${FINDTIME:-$FINDTIME_DEFAULT}"
+
+read -rp "Fail2ban maxretry [${MAXRETRY_DEFAULT}]: " MAXRETRY || true
+MAXRETRY="${MAXRETRY:-$MAXRETRY_DEFAULT}"
+
+read -rp "Firewall backend (iptables/nftables) [${FW_DEFAULT}]: " FW || true
+FW="${FW:-$FW_DEFAULT}"
 FW_LOWER="$(echo "$FW" | tr '[:upper:]' '[:lower:]')"
 if [[ "$FW_LOWER" != "iptables" && "$FW_LOWER" != "nftables" ]]; then
-  err "unknown firewall backend '$FW_LOWER' (use iptables or nftables)"; exit 1
+  echo "Unknown firewall backend '$FW'. Use iptables or nftables."; exit 1
 fi
 
-bold "Summary"
-info "ACCESS_LOG  = $ACCESS_LOG"
-info "OUT_LOG     = $OUT_LOG"
-info "IP_LIMIT    = $IP_LIMIT"
-info "WINDOW_SEC  = $WINDOW_SEC"
-info "bantime     = $BANTIME"
-info "findtime    = $FINDTIME"
-info "maxretry    = $MAXRETRY"
-info "backend     = $FW_LOWER"
+echo
+echo "== Summary =="
+echo "ACCESS_LOG  = $ACCESS_LOG"
+echo "OUT_LOG     = $OUT_LOG"
+echo "IP_LIMIT    = $IP_LIMIT"
+echo "WINDOW_SEC  = $WINDOW_SEC"
+echo "bantime     = $BANTIME"
+echo "findtime    = $FINDTIME"
+echo "maxretry    = $MAXRETRY"
+echo "backend     = $FW_LOWER"
 echo
 
-# ---------------------------
-# Install deps
-# ---------------------------
-install_deps
+# --- 2) deps ---
+echo ">> Installing dependencies (python3, fail2ban)..."
+if command -v apt >/dev/null 2>&1; then
+  apt update -y
+  apt install -y python3 fail2ban
+else
+  echo "Please install python3 and fail2ban with your package manager."; 
+fi
 
-# ---------------------------
-# Feeder (Python)
-# ---------------------------
-info "Installing feeder to /usr/local/bin/marzban-ipl-feeder.py"
+# --- 3) feeder script ---
+echo ">> Writing feeder /usr/local/bin/marzban-ipl-feeder.py"
 install -d -m 0755 /usr/local/bin
 cat >/usr/local/bin/marzban-ipl-feeder.py <<'PY'
 #!/usr/bin/env python3
@@ -141,7 +105,7 @@ LINE_RE = re.compile(
     re.IGNORECASE
 )
 
-user_hits = defaultdict(deque)
+user_hits = defaultdict(deque)  # user -> deque of (ip, ts)
 
 def prune_old(now):
     cutoff = now - timedelta(seconds=WINDOW_SEC)
@@ -166,7 +130,7 @@ def follow(path):
                     f.close()
                 f = open(path, "r")
                 inode = st.st_ino
-                f.seek(0, os.SEEK_END)
+                f.seek(0, os.SEEK_END)  # read new lines only
             line = f.readline()
             if line:
                 yield line.rstrip("\n")
@@ -189,6 +153,7 @@ def main():
         now  = datetime.utcnow()
 
         prune_old(now)
+        # set of IPs within window
         ips_now = {ip_ for (ip_, t_) in user_hits[user] if (now - t_).total_seconds() <= WINDOW_SEC}
 
         if ip not in ips_now:
@@ -201,12 +166,9 @@ if __name__ == "__main__":
     main()
 PY
 chmod +x /usr/local/bin/marzban-ipl-feeder.py
-ok "feeder installed"
 
-# ---------------------------
-# systemd unit
-# ---------------------------
-info "Creating systemd unit /etc/systemd/system/marzban-ipl.service"
+# --- 4) systemd unit ---
+echo ">> Writing systemd unit /etc/systemd/system/marzban-ipl.service"
 cat >/etc/systemd/system/marzban-ipl.service <<EOF
 [Unit]
 Description=Marzban IPL feeder (3x-ui style) for Fail2ban
@@ -229,12 +191,9 @@ EOF
 
 systemctl daemon-reload
 systemctl enable --now marzban-ipl
-ok "systemd service started"
 
-# ---------------------------
-# Fail2ban filter
-# ---------------------------
-info "Writing Fail2ban filter /etc/fail2ban/filter.d/marzban-ipl.conf"
+# --- 5) fail2ban filter ---
+echo ">> Writing Fail2ban filter /etc/fail2ban/filter.d/marzban-ipl.conf"
 cat >/etc/fail2ban/filter.d/marzban-ipl.conf <<'EOF'
 [Definition]
 # Example:
@@ -243,13 +202,12 @@ datepattern = ^%%Y/%%m/%%d %%H:%%M:%%S
 failregex   = ^\s*<DATETIME>\s+\[LIMIT_IP\]\s*Email\s*=\s*(?P<F-USER>\S+)\s*\|\|\s*SRC\s*=\s*<ADDR>\s*$
 ignoreregex =
 EOF
-ok "filter created"
 
-# ---------------------------
-# Fail2ban jail (+ action for iptables)
-# ---------------------------
+# --- 6) fail2ban jail ---
+echo ">> Writing Fail2ban jail /etc/fail2ban/jail.d/marzban-ipl.conf"
 if [[ "$FW_LOWER" == "iptables" ]]; then
-  info "Using iptables with custom BAN/UNBAN logging action"
+  # собственный action, чтобы писать BAN/UNBAN лог
+  echo ">> Using iptables and custom action with BAN/UNBAN log"
   cat >/etc/fail2ban/action.d/marzban-ipl.conf <<'EOF'
 [INCLUDES]
 before = iptables-allports.conf
@@ -290,7 +248,8 @@ bantime  = ${BANTIME}
 EOF
 
 else
-  info "Using nftables (built-in action)"
+  # nftables — используем встроенный action без кастомного логирования
+  echo ">> Using nftables (built-in action). BAN/UNBAN file will not be written by action."
   cat >/etc/fail2ban/jail.d/marzban-ipl.conf <<EOF
 [marzban-ipl]
 enabled  = true
@@ -304,48 +263,44 @@ bantime  = ${BANTIME}
 EOF
 fi
 
+# --- 7) restart fail2ban ---
+echo ">> Restarting fail2ban..."
 systemctl restart fail2ban
-ok "fail2ban restarted"
 
+# --- 8) show status & tips ---
 echo
-bold "Installation complete"
+echo "=== Installation complete ==="
 systemctl --no-pager status marzban-ipl | sed -n '1,12p' || true
 echo
-fail2ban-client status | sed -n '1,20p' || true
+fail2ban-client status || true
 echo
-bold "Feeder Environment"
+echo "Feeder env:"
 systemctl show -p Environment marzban-ipl
 
 cat <<'HINT'
 
-Quick test:
-  LOG=$(systemctl show -p Environment marzban-ipl | sed -E 's/.*ACCESS_LOG=([^ ]+).*/\1/')
-  echo "2025/11/04 02:30:01 from tcp:198.51.100.10:12345 accepted udp:1.1.1.1:53 [VLESS TCP REALITY >> DIRECT] email: testuser" | tee -a "$LOG"
-  echo "2025/11/04 02:30:10 from 203.0.113.55:54321 accepted tcp:www.google.com:443 [VLESS TCP REALITY >> DIRECT] email: testuser" | tee -a "$LOG"
-  sleep 2
-  tail -n 10 /var/log/marzban-ipl.log
-  fail2ban-client status marzban-ipl
+--- Quick test ---
+1) Make two lines for the same email with different IPs into ACCESS_LOG:
+   LOG=<the ACCESS_LOG you chose>
+   echo "2025/11/04 02:30:01 from tcp:198.51.100.10:12345 accepted udp:1.1.1.1:53 [VLESS TCP REALITY >> DIRECT] email: testuser" | tee -a "$LOG"
+   echo "2025/11/04 02:30:10 from 203.0.113.55:54321 accepted tcp:www.google.com:443 [VLESS TCP REALITY >> DIRECT] email: testuser" | tee -a "$LOG"
 
-Tuning:
-  - Concurrency strictness: systemctl edit marzban-ipl
-      [Service]
-      Environment=WINDOW_SEC=60
-    then: systemctl daemon-reload && systemctl restart marzban-ipl
+2) Check:
+   tail -n 10 /var/log/marzban-ipl.log                    # should see [LIMIT_IP] Email = testuser || SRC = 203.0.113.55
+   fail2ban-client status marzban-ipl                      # should list 203.0.113.55 as banned
 
-  - Ban time: edit /etc/fail2ban/jail.d/marzban-ipl.conf (bantime) && systemctl restart fail2ban
+--- Useful ---
+- Change window (concurrency strictness):
+  systemctl edit marzban-ipl
+  [Service]
+  Environment=WINDOW_SEC=60
+  systemctl daemon-reload && systemctl restart marzban-ipl
 
-Logs:
+- Change ban time:
+  edit /etc/fail2ban/jail.d/marzban-ipl.conf (bantime) && systemctl restart fail2ban
+
+- Logs:
   tail -f /var/log/marzban-ipl.log
-  tail -f /var/log/marzban-ipl-banned.log   # only with iptables action
+  tail -f /var/log/marzban-ipl-banned.log   (only with iptables custom action)
   journalctl -u marzban-ipl -n 100 --no-pager
-
-Uninstall (manual):
-  systemctl disable --now marzban-ipl
-  rm -f /etc/systemd/system/marzban-ipl.service
-  rm -f /usr/local/bin/marzban-ipl-feeder.py
-  rm -f /etc/fail2ban/filter.d/marzban-ipl.conf
-  rm -f /etc/fail2ban/jail.d/marzban-ipl.conf
-  rm -f /etc/fail2ban/action.d/marzban-ipl.conf
-  systemctl daemon-reload
-  systemctl restart fail2ban
 HINT
